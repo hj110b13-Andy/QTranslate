@@ -11,6 +11,11 @@
 ## 安裝
 
 1. 下載 [`dist/QTranslate-Setup.exe`](dist/QTranslate-Setup.exe)
+
+   > 點進檔案頁面後按 **Download** 按鈕。這個檔案由 Git LFS 管理，
+   > 直接複製 raw 連結下載會只拿到一個幾百位元組的指標檔。
+   > 用 `git clone` 的話，該台電腦需要先裝 Git LFS。
+
 2. 雙擊執行，按「安裝」
 
    > 第一次執行時 Windows 會顯示「Windows 已保護您的電腦」。
