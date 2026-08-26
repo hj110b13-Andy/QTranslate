@@ -1,0 +1,140 @@
+﻿{
+   "Application": {
+      "SaveHistoryPath": "",
+      "HistoryFilterFavorites": false,
+      "OptionsPageIndex": 7,
+      "HistoryFilter": ""
+   },
+   "Exceptions": {
+      "Disabled": [["", "SysListView32"], ["", "SysTreeView32"], ["", "ListBox"], ["", "ScrollBar"], ["", "ComboBox"], ["", "msctls_hotkey32"], ["", "ConsoleWindowClass"], ["mstsc.exe", ""]],
+      "Enabled": [],
+      "DisabledMode": true
+   },
+   "Contents": {
+      "EditBackTranslation": "",
+      "SaveOnExit": true,
+      "EditTranslation": "",
+      "EditSource": ""
+   },
+   "Advanced": {
+      "EnableSlowerListening": true,
+      "OcrApiKey": "",
+      "LayoutIndicator": 0,
+      "EnableGuiTranslation": false,
+      "CopyAction": 0,
+      "SwitchMouseModeOnTrayClick": true,
+      "DefaultBrowserId": "",
+      "EnableMouseModeOnCtrl": true,
+      "RemoveLineBreaks": false,
+      "PreferredDomain": "com"
+   },
+   "Appearance": {
+      "EnableWindowStyle": false,
+      "PopupAutoSize": true,
+      "ColorFrame": 8023133,
+      "PopupPinWhenDragging": true,
+      "PopupWindowFrameThickness": 2,
+      "Transparency": 217,
+      "PopupIcons": 30,
+      "ColorText": 0,
+      "PopupAutoFocus": false,
+      "ThemeName": "",
+      "PopupAutoPos": true,
+      "PopupTimeout": 5,
+      "ColorBack": 15790320
+   },
+   "Internet": {
+      "Timeout": 10000
+   },
+   "HotKeys": {
+      "EnableHotKeys": true,
+      "HotKeyListenText": 581,
+      "HotKeyTranslateClipboardInMainWindow": 0,
+      "HotKeyReplaceSelection": 0,
+      "HotKeyHistory": 0,
+      "HotKeySwitchMouseMode": 0,
+      "HotKeyTextRecognition": 33280,
+      "HotKeyDictionaryClipboard": 0,
+      "HotKeySpeechInput": 0,
+      "HotKeyConvertTextLayout": 0,
+      "HotKeyCopyTranslation": 0,
+      "HotKeyTranslateClipboardInPopupWindow": 0,
+      "HotKeyDictionary": 1617,
+      "HotKeyListenTranslation": 0,
+      "HotKeyTranslateClipboard": 0,
+      "HotKeyKeyboard": 0,
+      "HotKeyPopupWindow": 593,
+      "HotKeyMainWindow": 849
+   },
+   "OfflineDictionaries": [],
+   "Ocr": {
+      "OcrLanguage": 17,
+      "SaveImagePath": ""
+   },
+   "Update": {
+      "CheckForUpdates": true
+   },
+   "DisabledServices": [],
+   "Proxy": {
+      "Password": "",
+      "Scheme": 0,
+      "Host": "",
+      "ProxyType": 0,
+      "Username": "",
+      "Port": 0
+   },
+   "DictionariesOrder": [10, 19, 20, 14, 17, 18, 22, 24, 25, 26, 29],
+   "DisabledLanguages": [],
+   "DisabledDictionaries": [],
+   "Dictionary": {
+      "ShowServicesPane": true,
+      "DictionaryZoom": 125,
+      "DictionaryExactSearch": true
+   },
+   "LanguagePairs": [[12, 11], [11, 12]],
+   "General": {
+      "InstantTranslation": true,
+      "LanguageDictionary": 12,
+      "LanguageKeyboard": 17,
+      "AutoCleanupOfTranslation": false,
+      "MouseMode": 1,
+      "WindowPopupPlacement": "",
+      "ClearHistoryOnExit": false,
+      "EnableHistory": true,
+      "WindowKeyboardPlacement": "",
+      "ShowServicesPane": false,
+      "MinimizeToTrayOnMinimize": false,
+      "WindowMainPlacement": "2C0000000000000001000000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF78000000780000003403000030020000",
+      "BackTranslation": false,
+      "WindowHistoryPlacement": "",
+      "WindowOptionsPlacement": "",
+      "ActiveServices": [1],
+      "UseSmartDetection": true,
+      "ShowMiddlePane": false,
+      "LanguageTo": 1,
+      "WindowDictionaryPlacement": "",
+      "ShowTopPane": true,
+      "MidSplitterPos": 1,
+      "LanguageFrom": 1,
+      "LocaleFoderName": "Chinese (Traditional)",
+      "ReadPhonetically": false,
+      "FontName": "",
+      "MainWindowStartupAction": 0,
+      "ActiveDictionaryServices": [10],
+      "AlwaysDetectLanguage": false,
+      "MainWindowShowOnLoad": false,
+      "MinimizeToTrayOnClose": true,
+      "ExpandHistoryItems": false,
+      "BackTranslationSplitterPos": -1,
+      "MouseModeOn": true,
+      "SpellChecking": true,
+      "ClearOnDragDrop": true,
+      "TextSize": 9
+   },
+   "ServicesOrder": [1, 5, 12, 13, 11, 26, 28, 30, 31],
+   "AutoDetection": {
+      "LanguageFirst": 12,
+      "LanguageSecond": 11,
+      "LanguageSpeechRecognition": 12
+   }
+}

@@ -1,0 +1,7 @@
+# 個人資料：這些備份含 OCR API 金鑰與完整翻譯紀錄，不可上傳
+backup_*/
+
+# 建置產物
+installer/bin/
+installer/obj/
+installer/publish/
