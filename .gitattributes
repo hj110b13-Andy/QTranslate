@@ -1,8 +1,7 @@
 * text=auto
 
-# 二進位檔：絕不可做換行轉換，否則安裝檔會損壞
-*.exe binary
-*.zip binary
-*.ico binary
+# 大型二進位檔交給 Git LFS；-text 同時停用換行轉換，
+# 否則 Windows 上的自動轉換會把安裝檔弄壞。
 *.exe filter=lfs diff=lfs merge=lfs -text
 *.zip filter=lfs diff=lfs merge=lfs -text
+*.ico binary
