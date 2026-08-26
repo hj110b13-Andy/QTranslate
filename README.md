@@ -10,11 +10,9 @@
 
 ## 安裝
 
-1. 下載 [`dist/QTranslate-Setup.exe`](dist/QTranslate-Setup.exe)
+1. 下載安裝檔：**[QTranslate-Setup.exe](https://github.com/hj110b13-Andy/QTranslate/releases/latest/download/QTranslate-Setup.exe)**
 
-   > 點進檔案頁面後按 **Download** 按鈕。這個檔案由 Git LFS 管理，
-   > 直接複製 raw 連結下載會只拿到一個幾百位元組的指標檔。
-   > 用 `git clone` 的話，該台電腦需要先裝 Git LFS。
+   （或到 [Releases 頁面](https://github.com/hj110b13-Andy/QTranslate/releases/latest) 下載）
 
 2. 雙擊執行，按「安裝」
 
@@ -75,8 +73,31 @@ PDF 原本的斷行**——那只是顯示，不影響翻譯結果。
   →「以系統管理員身分執行」。它只替換一個檔案，不動任何設定。
   `Restore-Original.cmd` 可以還原。
 - **技術細節**：見 [docs/技術細節.md](docs/技術細節.md)
-- **重新打包安裝檔**：改過 `patch/Google Translate/Service.js` 之後執行
-  `build-installer.ps1`（需要 .NET SDK 9）
+
+### 重新打包與發佈新版
+
+改過 `patch/Google Translate/Service.js` 之後：
+
+```powershell
+.\build-installer.ps1        # 需要 .NET SDK 9
+```
+
+新的安裝檔會產生在 `dist\`。要讓其他電腦拿到，**發成一個新的 Release**，
+不要只依賴 repo 裡的檔案：
+
+```bash
+git tag v6.10.2
+git push origin v6.10.2
+# 到 GitHub 的 Releases 頁面建立 release，把 dist\QTranslate-Setup.exe 拖上去
+```
+
+Release 的附件有固定的直接下載網址、不需要 Git LFS，而且**不計入 LFS 的
+1 GB 額度**。
+
+> `dist/QTranslate-Setup.exe` 這個檔案在 repo 裡由 Git LFS 管理。
+> 從網頁下載它要點進檔案頁面按 Download 按鈕——直接用
+> `raw.githubusercontent.com` 的連結只會拿到一個 133 位元組的指標檔。
+> 用 Release 的下載連結就沒有這個問題，所以上面才建議走 Release。
 
 QTranslate 是 QuestSoft 的免費軟體，著作權屬於原作者。
 官方網站：<https://quest-app.appspot.com>
