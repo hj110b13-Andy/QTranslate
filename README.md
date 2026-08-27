@@ -82,7 +82,18 @@ PDF 原本的斷行**——那只是顯示，不影響翻譯結果。
 初始狀態——那是那台電腦的環境問題，**重裝安裝檔解決不了**，因為問題出在
 QTranslate 事後存不回設定檔，不在於安裝時寫了什麼。
 
-在那台電腦上執行 **`Diagnose.cmd`**（不需要系統管理員權限），它會檢查：
+在那台電腦上下載這**兩個**檔案，**放在同一個資料夾**，然後雙擊 `Diagnose.cmd`：
+
+- **[Diagnose.cmd](https://github.com/hj110b13-Andy/QTranslate/releases/latest/download/Diagnose.cmd)**
+- **[Diagnose.ps1](https://github.com/hj110b13-Andy/QTranslate/releases/latest/download/Diagnose.ps1)**
+
+`Diagnose.cmd` 只是個啟動器，實際的檢查在 `Diagnose.ps1` 裡，**少一個就跑不起來**。
+放哪個資料夾都可以（桌面、下載資料夾都行），只要兩個在一起。
+
+**不需要系統管理員權限**——而且請不要用系統管理員身分執行，否則 `%APPDATA%`
+會指到別的地方，提權偵測也會失準。
+
+它會檢查：
 
 - `Options.json` 是否存在、可否寫入、內容是不是合法 JSON
 - QTranslate 是否以系統管理員身分執行（提權時若用了別的管理員帳號，
