@@ -22,6 +22,41 @@ function Section($title) {
     Say "===== $title ====="
 }
 
+<#
+    QTranslate 把快速鍵存成 (修飾鍵 << 8) | 虛擬鍵碼。
+    修飾鍵的位元：Alt=1、Ctrl=2、Shift=4、Win=8，而 0x80 代表「連點兩下」。
+
+    所以 33280 (0x8200) 是「連點兩下 Ctrl」，
+    而 512 (0x0200) 少了 0x80，會變成「單擊 Ctrl」。
+#>
+function Decode-HotKey([int]$value) {
+    if ($value -eq 0) { return '(未設定)' }
+
+    $mods = $value -shr 8
+    $vk = $value -band 0xFF
+    $parts = @()
+
+    if ($mods -band 0x02) { $parts += 'Ctrl' }
+    if ($mods -band 0x04) { $parts += 'Shift' }
+    if ($mods -band 0x01) { $parts += 'Alt' }
+    if ($mods -band 0x08) { $parts += 'Win' }
+
+    $key = switch ($vk) {
+        0   { '' }
+        13  { 'Enter' }
+        32  { 'Space' }
+        default {
+            if ($vk -ge 0x30 -and $vk -le 0x5A) { [char]$vk }
+            elseif ($vk -ge 0x70 -and $vk -le 0x87) { 'F' + ($vk - 0x6F) }
+            else { "VK_0x{0:X2}" -f $vk }
+        }
+    }
+
+    $text = ($parts + $key | Where-Object { $_ }) -join '+'
+    if ($mods -band 0x80) { $text = "連點兩下 $text" }
+    return $text
+}
+
 Say "QTranslate 設定診斷    $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Say "電腦: $env:COMPUTERNAME    使用者: $env:USERNAME"
 
@@ -54,16 +89,43 @@ if (-not (Test-Path -LiteralPath $options)) {
         $json = Get-Content -LiteralPath $options -Raw -Encoding UTF8 | ConvertFrom-Json
         Say 'JSON 格式: 正常'
         foreach ($probe in @(
-                @{ Path = 'General.MouseMode';              Label = '滑鼠模式顯示方式' }
-                @{ Path = 'General.MouseModeOn';            Label = '滑鼠模式啟用' }
-                @{ Path = 'Advanced.EnableMouseModeOnCtrl'; Label = '按住 Ctrl 才翻譯' }
-                @{ Path = 'HotKeys.HotKeyTextRecognition';  Label = '畫面翻譯快速鍵' }
-                @{ Path = 'HotKeys.HotKeyMainWindow';       Label = '主視窗快速鍵' }
-                @{ Path = 'General.LocaleFoderName';        Label = '介面語言' })) {
+                @{ Path = 'General.MouseMode';              Label = '滑鼠模式顯示方式'; Expect = 1 }
+                @{ Path = 'General.MouseModeOn';            Label = '滑鼠模式啟用';   Expect = $true }
+                @{ Path = 'Advanced.EnableMouseModeOnCtrl'; Label = '按住 Ctrl 才翻譯'; Expect = $true }
+                @{ Path = 'Advanced.RemoveLineBreaks';      Label = '移除換行字元';   Expect = $false }
+                @{ Path = 'General.LocaleFoderName';        Label = '介面語言';       Expect = 'Chinese (Traditional)' })) {
             $parts = $probe.Path.Split('.')
             $value = $json
             foreach ($p in $parts) { $value = if ($null -ne $value) { $value.$p } else { $null } }
-            Say ("  {0,-16} = {1}" -f $probe.Label, $value)
+            $flag = if ($null -ne $probe.Expect -and "$value" -ne "$($probe.Expect)") { "   <- 預期 $($probe.Expect)" } else { '' }
+            Say ("  {0,-18} = {1}{2}" -f $probe.Label, $value, $flag)
+        }
+
+        # 快速鍵單獨處理：數字看不出對錯，解讀成人看得懂的形式並比對預期值。
+        foreach ($hk in @(
+                @{ Key = 'HotKeyTextRecognition'; Label = '畫面框選翻譯'; Expect = 33280 }
+                @{ Key = 'HotKeyMainWindow';      Label = '主視窗';       Expect = 849 }
+                @{ Key = 'HotKeyPopupWindow';     Label = '彈出視窗翻譯'; Expect = 593 }
+                @{ Key = 'HotKeyListenText';      Label = '朗讀選取文字'; Expect = 581 })) {
+            $value = $json.HotKeys.$($hk.Key)
+            if ($null -eq $value) {
+                Say ("  {0,-18} = (設定檔裡沒有這一項)" -f $hk.Label)
+                continue
+            }
+            $value = [int]$value
+            Say ("  {0,-18} = {1}  ({2})" -f $hk.Label, $value, (Decode-HotKey $value))
+            if ($value -ne $hk.Expect) {
+                Say ("    [問題] 預期 {0} ({1})，實際是 {2}。" -f $hk.Expect, (Decode-HotKey $hk.Expect), $value)
+
+                $wantsDoubleTap = (($hk.Expect -shr 8) -band 0x80) -ne 0
+                $hasDoubleTap = (($value -shr 8) -band 0x80) -ne 0
+                if ($wantsDoubleTap -and -not $hasDoubleTap) {
+                    Say '           少了 0x80 這個「連點兩下」旗標，所以單擊就會觸發。'
+                }
+            }
+        }
+        if ($json.HotKeys.EnableHotKeys -eq $false) {
+            Say '  [問題] 全域快速鍵被停用（EnableHotKeys = False）。'
         }
         $key = $json.Advanced.OcrApiKey
         Say ("  {0,-16} = {1}" -f 'OCR 金鑰', $(if ([string]::IsNullOrEmpty($key)) { '(空白)' } else { '已填入 (' + $key.Length + ' 字元)' }))
