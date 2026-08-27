@@ -9,13 +9,19 @@ namespace QTranslateFix;
 sealed class Deployer
 {
     public const string DisplayName = "QTranslate 6.10.0 (修正版)";
-    public const string Version = "6.10.2";
+    public const string Version = "6.10.3";
 
     const string ProcessName = "QTranslate";
     const string RunValueName = "QTranslate";
     const string SetupFileName = "QTranslate-Setup.exe";
     const string UninstallKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\QTranslate-Fixed";
     const string RunKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
+
+    // The stock QTranslate installer registers itself here. Left in place it
+    // would show up as a second entry in Apps and Features alongside ours, and
+    // running it would delete the folder out from under our own uninstaller.
+    const string StockUninstallKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\QTranslate";
+    const string StockUninstaller = "Uninstall.exe";
 
     readonly Action<string> _log;
 
@@ -59,6 +65,7 @@ sealed class Deployer
         }
 
         SetStartup(options.RunAtStartup, exePath);
+        RemoveStockUninstaller(targetFolder);
         CopySelfAndRegister(targetFolder, exePath);
 
         _log("");
@@ -225,6 +232,54 @@ sealed class Deployer
         catch (Exception ex)
         {
             _log("設定開機啟動時發生問題：" + ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Takes over from the stock installer, so that "應用程式與功能" ends up with
+    /// exactly one QTranslate entry - ours - and there is only one way to remove
+    /// the program.
+    /// </summary>
+    void RemoveStockUninstaller(string targetFolder)
+    {
+        // The stock installer is 32-bit, so its key lives in the WOW6432Node
+        // view; check both views rather than assuming.
+        foreach (var view in new[] { RegistryView.Registry64, RegistryView.Registry32 })
+        {
+            try
+            {
+                using var root = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, view);
+                using (var probe = root.OpenSubKey(StockUninstallKey))
+                {
+                    if (probe is null)
+                    {
+                        continue;
+                    }
+                    _log($"已移除原版的解除安裝項目：{probe.GetValue("DisplayName")}");
+                }
+
+                root.DeleteSubKeyTree(StockUninstallKey, throwOnMissingSubKey: false);
+            }
+            catch (Exception ex)
+            {
+                _log("移除原版解除安裝項目時發生問題：" + ex.Message);
+            }
+        }
+
+        // Its uninstaller would still delete the folder if run directly, which
+        // would leave our own entry pointing at a file that no longer exists.
+        var stock = Path.Combine(targetFolder, StockUninstaller);
+        try
+        {
+            if (File.Exists(stock))
+            {
+                File.Delete(stock);
+                _log("已移除原版的 Uninstall.exe");
+            }
+        }
+        catch (Exception ex)
+        {
+            _log("移除原版 Uninstall.exe 時發生問題：" + ex.Message);
         }
     }
 

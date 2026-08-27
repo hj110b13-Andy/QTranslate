@@ -40,6 +40,14 @@ try {
     $serviceTarget = Join-Path $stage 'Services\Google Translate\Service.js'
     Copy-Item -LiteralPath $patch -Destination $serviceTarget -Force
 
+    # 原版的 Uninstall.exe 不隨封裝散布：安裝程式自己提供解除安裝，
+    # 留著它反而會有兩個移除途徑，其中一個會刪掉另一個。
+    $stockUninstaller = Join-Path $stage 'Uninstall.exe'
+    if (Test-Path -LiteralPath $stockUninstaller) {
+        Remove-Item -LiteralPath $stockUninstaller -Force
+        Write-Host '    已排除原版的 Uninstall.exe'
+    }
+
     $count = (Get-ChildItem -LiteralPath $stage -Recurse -File).Count
     Write-Host "    $count 個檔案，Service.js $((Get-Item $serviceTarget).Length) 位元組"
 
