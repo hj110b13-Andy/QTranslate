@@ -9,7 +9,11 @@ sealed class MainForm : Form
     readonly CheckBox _startMenu = new();
     readonly CheckBox _desktop = new();
     readonly CheckBox _startup = new();
-    readonly CheckBox _settings = new();
+    readonly RadioButton _settingsReplace = new();
+    readonly RadioButton _settingsMerge = new();
+    readonly RadioButton _settingsNone = new();
+    readonly GroupBox _optionsBox = new();
+    readonly GroupBox _settingsBox = new();
     readonly Button _primary = new();
     readonly Button _uninstall = new();
     readonly TextBox _log = new();
@@ -20,8 +24,8 @@ sealed class MainForm : Form
 
         Text = uninstallMode ? "QTranslate 解除安裝" : "QTranslate 安裝程式";
         Font = new Font("Microsoft JhengHei UI", 9.75f);
-        ClientSize = new Size(660, 600);
-        MinimumSize = new Size(600, 520);
+        ClientSize = new Size(660, 700);
+        MinimumSize = new Size(600, 620);
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.White;
 
@@ -66,13 +70,10 @@ sealed class MainForm : Form
         _browse.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         _browse.Click += (_, _) => Browse();
 
-        var optionsBox = new GroupBox
-        {
-            Text = "選項",
-            Location = new Point(24, 176),
-            Size = new Size(612, 132),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
-        };
+        _optionsBox.Text = "捷徑與啟動";
+        _optionsBox.Location = new Point(24, 176);
+        _optionsBox.Size = new Size(612, 108);
+        _optionsBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
 
         _startMenu.Text = "建立開始功能表捷徑";
         _startMenu.AutoSize = true;
@@ -86,30 +87,45 @@ sealed class MainForm : Form
         _startup.AutoSize = true;
         _startup.Location = new Point(16, 74);
 
-        _settings.Text = "套用建議設定（滑鼠模式、快速鍵、關閉「移除換行字元」）";
-        _settings.AutoSize = true;
-        _settings.Location = new Point(16, 98);
+        _optionsBox.Controls.AddRange(new Control[] { _startMenu, _desktop, _startup });
 
-        optionsBox.Controls.AddRange(new Control[] { _startMenu, _desktop, _startup, _settings });
+        _settingsBox.Text = "設定";
+        _settingsBox.Location = new Point(24, 296);
+        _settingsBox.Size = new Size(612, 112);
+        _settingsBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+        _settingsReplace.Text = "完整套用（覆蓋這台電腦既有的設定）";
+        _settingsReplace.AutoSize = true;
+        _settingsReplace.Location = new Point(16, 26);
+
+        _settingsMerge.Text = "只套用必要設定（保留這台電腦的其他設定）";
+        _settingsMerge.AutoSize = true;
+        _settingsMerge.Location = new Point(16, 52);
+
+        _settingsNone.Text = "不變更設定";
+        _settingsNone.AutoSize = true;
+        _settingsNone.Location = new Point(16, 78);
+
+        _settingsBox.Controls.AddRange(new Control[] { _settingsReplace, _settingsMerge, _settingsNone });
 
         var hint = new Label
         {
-            Text = "OCR 金鑰不會預先填入。畫面翻譯要用的話，請到 ocr.space 申請免費金鑰，\n"
-                 + "填進 QTranslate 的「選項 → 進階 → OCR API key」。",
+            Text = "曾經裝過其他版本的 QTranslate 時請選「完整套用」——解除安裝不會清掉設定檔，\n"
+                 + "舊版的快速鍵會留下來。原設定會先備份，已填好的 OCR 金鑰不會被清除。",
             AutoSize = false,
-            Size = new Size(612, 40),
-            Location = new Point(26, 314),
+            Size = new Size(612, 44),
+            Location = new Point(26, 414),
             ForeColor = Color.FromArgb(120, 120, 120),
         };
 
         _primary.Text = _uninstallMode ? "解除安裝" : "安裝";
         _primary.Size = new Size(130, 38);
-        _primary.Location = new Point(24, 360);
+        _primary.Location = new Point(24, 462);
         _primary.Click += (_, _) => Run(_uninstallMode);
 
         _uninstall.Text = "解除安裝";
         _uninstall.Size = new Size(130, 38);
-        _uninstall.Location = new Point(164, 360);
+        _uninstall.Location = new Point(164, 462);
         _uninstall.Visible = !_uninstallMode;
         _uninstall.Click += (_, _) => Run(uninstall: true);
 
@@ -117,7 +133,7 @@ sealed class MainForm : Form
         {
             Text = "關閉",
             Size = new Size(100, 38),
-            Location = new Point(536, 360),
+            Location = new Point(536, 462),
             Anchor = AnchorStyles.Top | AnchorStyles.Right,
         };
         close.Click += (_, _) => Close();
@@ -127,13 +143,14 @@ sealed class MainForm : Form
         _log.ScrollBars = ScrollBars.Vertical;
         _log.BackColor = Color.FromArgb(248, 248, 248);
         _log.Font = new Font("Consolas", 9.5f);
-        _log.Location = new Point(24, 410);
+        _log.Location = new Point(24, 512);
         _log.Size = new Size(612, 166);
         _log.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
 
         Controls.AddRange(new Control[]
         {
-            title, blurb, folderLabel, _folder, _browse, optionsBox, hint, _primary, _uninstall, close, _log,
+            title, blurb, folderLabel, _folder, _browse, _optionsBox, _settingsBox, hint,
+            _primary, _uninstall, close, _log,
         });
     }
 
@@ -146,14 +163,12 @@ sealed class MainForm : Form
         _startMenu.Checked = !_uninstallMode;
         _desktop.Checked = false;
         _startup.Checked = !_uninstallMode;
-        _settings.Checked = !_uninstallMode;
+        _settingsReplace.Checked = true;
 
         if (_uninstallMode)
         {
-            foreach (var box in new[] { _startMenu, _desktop, _startup, _settings })
-            {
-                box.Enabled = false;
-            }
+            _optionsBox.Enabled = false;
+            _settingsBox.Enabled = false;
             _browse.Enabled = false;
             _folder.ReadOnly = true;
             Log("準備解除安裝。確認上方位置無誤後按「解除安裝」。");
@@ -164,6 +179,19 @@ sealed class MainForm : Form
             ? "這台電腦還沒有 QTranslate，將進行全新安裝。"
             : "偵測到既有安裝，將直接覆蓋更新：" + existing);
         Log("確認選項後按「安裝」。");
+    }
+
+    OptionsPatcher.Mode? SelectedMode()
+    {
+        if (_settingsReplace.Checked)
+        {
+            return OptionsPatcher.Mode.Replace;
+        }
+        if (_settingsMerge.Checked)
+        {
+            return OptionsPatcher.Mode.Merge;
+        }
+        return null;
     }
 
     void Browse()
@@ -219,7 +247,7 @@ sealed class MainForm : Form
                     DesktopShortcut: _desktop.Checked,
                     StartMenuShortcut: _startMenu.Checked,
                     RunAtStartup: _startup.Checked,
-                    ApplySettings: _settings.Checked));
+                    SettingsMode: SelectedMode()));
             }
         }
         catch (Exception ex)

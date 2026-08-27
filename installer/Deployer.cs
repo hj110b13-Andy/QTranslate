@@ -9,7 +9,7 @@ namespace QTranslateFix;
 sealed class Deployer
 {
     public const string DisplayName = "QTranslate 6.10.0 (修正版)";
-    public const string Version = "6.10.1";
+    public const string Version = "6.10.2";
 
     const string ProcessName = "QTranslate";
     const string RunValueName = "QTranslate";
@@ -21,7 +21,12 @@ sealed class Deployer
 
     public Deployer(Action<string> log) => _log = log;
 
-    public sealed record Options(bool DesktopShortcut, bool StartMenuShortcut, bool RunAtStartup, bool ApplySettings);
+    /// <param name="SettingsMode">null leaves Options.json untouched.</param>
+    public sealed record Options(
+        bool DesktopShortcut,
+        bool StartMenuShortcut,
+        bool RunAtStartup,
+        OptionsPatcher.Mode? SettingsMode);
 
     public void Install(string targetFolder, Options options)
     {
@@ -30,10 +35,10 @@ sealed class Deployer
         Directory.CreateDirectory(targetFolder);
         Extract(targetFolder);
 
-        if (options.ApplySettings)
+        if (options.SettingsMode is { } mode)
         {
             _log("");
-            new OptionsPatcher(_log).Apply(QTranslateLocator.OptionsPath());
+            new OptionsPatcher(_log).Apply(QTranslateLocator.OptionsPath(), mode);
         }
 
         var exePath = QTranslateLocator.ExePath(targetFolder);

@@ -2,7 +2,7 @@
    "Application": {
       "SaveHistoryPath": "",
       "HistoryFilterFavorites": false,
-      "OptionsPageIndex": 7,
+      "OptionsPageIndex": 0,
       "HistoryFilter": ""
    },
    "Exceptions": {
@@ -13,8 +13,8 @@
    "Contents": {
       "EditBackTranslation": "",
       "SaveOnExit": true,
-      "EditTranslation": "",
-      "EditSource": ""
+      "EditTranslation": "Ctrl+Alt+Q",
+      "EditSource": "Ctrl+Alt+Q"
    },
    "Advanced": {
       "EnableSlowerListening": true,

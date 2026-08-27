@@ -5,19 +5,33 @@ using System.Text.RegularExpressions;
 namespace QTranslateFix;
 
 /// <summary>
-/// Brings Options.json to the recommended configuration. On a machine that has
-/// never run QTranslate the file does not exist yet, so a prepared template is
-/// written instead. Where the file does exist, only the known keys are
-/// rewritten, which preserves formatting and every setting not listed here.
+/// Brings Options.json to the wanted configuration.
+///
+/// Uninstalling QTranslate leaves Options.json behind, so a machine that once
+/// had a different build still carries that build's hotkeys and mouse settings.
+/// Merging only the keys this installer knows about is not enough to dislodge
+/// them, which is why <see cref="Mode.Replace"/> exists: it drops the whole
+/// file and writes the prepared one, so every machine ends up behaving the same.
 /// </summary>
 sealed class OptionsPatcher
 {
+    public enum Mode
+    {
+        /// <summary>Overwrite the whole file. The OCR key is still carried over.</summary>
+        Replace,
+
+        /// <summary>Change only the keys listed below, leave everything else alone.</summary>
+        Merge,
+    }
+
     // QTranslate encodes a hotkey as (modifiers << 8) | virtual-key, where the
     // modifier bits are Alt=1, Ctrl=2, Shift=4, and 0x80 marks a double tap.
     const int DoubleTapCtrl = 0x8200;   // 33280
     const int CtrlAltQ = 0x0351;        // 849
     const int CtrlQ = 0x0251;           // 593
     const int CtrlE = 0x0245;           // 581
+
+    const string OcrKeyName = "OcrApiKey";
 
     /// <param name="KeepExisting">
     /// Leave the value alone when the file already has one. The OCR key is
@@ -38,16 +52,17 @@ sealed class OptionsPatcher
 
     public static readonly Setting[] Settings =
     {
-        new("OcrApiKey", "\"\"", "OCR API 金鑰留空，請自行申請後填入", KeepExisting: true),
+        new(OcrKeyName, "\"\"", "OCR API 金鑰留空，請自行申請後填入", KeepExisting: true),
         new("RemoveLineBreaks", "false", "關閉「移除換行字元」（開啟會讓標題與段落黏在一起）"),
         new("MouseMode", "1", "滑鼠模式：選取文字後直接顯示翻譯"),
         new("MouseModeOn", "true", "啟用滑鼠模式"),
         new("EnableMouseModeOnCtrl", "true", "按住 Ctrl 選取文字才翻譯"),
         new("InstantTranslation", "true", "主視窗即時翻譯"),
-        new("HotKeyTextRecognition", "33280", "連點兩下 Ctrl：畫面框選翻譯"),
-        new("HotKeyMainWindow", "849", "Ctrl+Alt+Q：主視窗"),
-        new("HotKeyPopupWindow", "593", "Ctrl+Q：彈出視窗翻譯"),
-        new("HotKeyListenText", "581", "Ctrl+E：朗讀選取文字"),
+        new("EnableHotKeys", "true", "啟用全域快速鍵"),
+        new("HotKeyTextRecognition", DoubleTapCtrl.ToString(), "連點兩下 Ctrl：畫面框選翻譯"),
+        new("HotKeyMainWindow", CtrlAltQ.ToString(), "Ctrl+Alt+Q：主視窗"),
+        new("HotKeyPopupWindow", CtrlQ.ToString(), "Ctrl+Q：彈出視窗翻譯"),
+        new("HotKeyListenText", CtrlE.ToString(), "Ctrl+E：朗讀選取文字"),
         new("MidSplitterPos", "1", "收合原文框，主視窗只顯示譯文"),
         new("ShowMiddlePane", "false", "隱藏語言選擇工具列"),
         new("ShowServicesPane", "false", "隱藏底部服務圖示列", Section: "General"),
@@ -57,29 +72,72 @@ sealed class OptionsPatcher
 
     public OptionsPatcher(Action<string> log) => _log = log;
 
-    public void Apply(string optionsPath)
+    public void Apply(string optionsPath, Mode mode)
     {
-        _log("套用建議設定…");
+        _log("套用設定…");
 
-        if (!File.Exists(optionsPath))
+        var existing = File.Exists(optionsPath) ? File.ReadAllText(optionsPath) : null;
+
+        if (existing is not null)
         {
-            WriteTemplate(optionsPath);
+            BackUp(optionsPath);
+        }
+
+        if (existing is null || mode == Mode.Replace)
+        {
+            WriteTemplate(optionsPath, existing);
             return;
         }
 
-        var backup = optionsPath + ".before-fix";
-        if (!File.Exists(backup))
+        Merge(optionsPath, existing);
+    }
+
+    void WriteTemplate(string optionsPath, string existing)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(optionsPath));
+
+        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("Options.default.json")
+                           ?? throw new InvalidOperationException("設定範本沒有正確嵌入這個執行檔。");
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        var template = reader.ReadToEnd();
+
+        // The OCR key is the one thing worth rescuing from whatever was here
+        // before: it is personal, and it is the only setting the user has to
+        // type in by hand after installing.
+        var key = existing is null ? null : ValueOf(existing, OcrKeyName);
+        if (!string.IsNullOrEmpty(key))
         {
-            File.Copy(optionsPath, backup, overwrite: false);
-            _log("  已備份原設定為 Options.json.before-fix");
+            var slice = template;
+            if (TrySetValue(ref slice, OcrKeyName, "\"" + key + "\""))
+            {
+                template = slice;
+                _log("  保留這台電腦原有的 OCR API 金鑰");
+            }
         }
 
-        var json = File.ReadAllText(optionsPath);
+        File.WriteAllText(optionsPath, template, new UTF8Encoding(true));
+
+        _log(existing is null
+            ? "  這台電腦還沒有設定檔，已寫入完整設定"
+            : "  已用完整設定覆蓋這台電腦原本的設定");
+
+        foreach (var setting in Settings)
+        {
+            if (setting.Key == OcrKeyName && !string.IsNullOrEmpty(key))
+            {
+                continue;
+            }
+            _log("  " + setting.Description);
+        }
+    }
+
+    void Merge(string optionsPath, string json)
+    {
         var missing = new List<string>();
 
         foreach (var setting in Settings)
         {
-            if (setting.KeepExisting && HasValue(json, setting.Key))
+            if (setting.KeepExisting && !string.IsNullOrEmpty(ValueOf(json, setting.Key)))
             {
                 _log($"  保留這台電腦原有的設定：{setting.Key}");
                 continue;
@@ -104,28 +162,23 @@ sealed class OptionsPatcher
         }
     }
 
-    void WriteTemplate(string optionsPath)
+    void BackUp(string optionsPath)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(optionsPath));
-
-        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("Options.default.json")
-                           ?? throw new InvalidOperationException("設定範本沒有正確嵌入這個執行檔。");
-        using var reader = new StreamReader(stream, Encoding.UTF8);
-
-        File.WriteAllText(optionsPath, reader.ReadToEnd(), new UTF8Encoding(true));
-        _log("  這台電腦還沒有設定檔，已寫入預設設定");
-
-        foreach (var setting in Settings)
+        var backup = optionsPath + ".before-fix";
+        if (File.Exists(backup))
         {
-            _log("  " + setting.Description);
+            return;
         }
+
+        File.Copy(optionsPath, backup, overwrite: false);
+        _log("  已備份原設定為 Options.json.before-fix");
     }
 
-    /// <summary>True when the key is present and is not an empty string.</summary>
-    static bool HasValue(string json, string key)
+    /// <summary>The string value of a key, or null when absent or not a string.</summary>
+    static string ValueOf(string json, string key)
     {
         var match = new Regex("\"" + Regex.Escape(key) + "\"\\s*:\\s*\"((?:[^\"\\\\]|\\\\.)*)\"").Match(json);
-        return match.Success && match.Groups[1].Value.Length > 0;
+        return match.Success ? match.Groups[1].Value : null;
     }
 
     static bool TryApply(ref string json, Setting setting)
