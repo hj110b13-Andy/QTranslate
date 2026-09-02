@@ -1,21 +1,41 @@
-﻿using System.Diagnostics;
+﻿using System.ComponentModel;
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Reflection;
 using Microsoft.Win32;
 
 namespace QTranslateFix;
 
-/// <summary>Unpacks QTranslate, wires up shortcuts, and takes it all away again.</summary>
+/// <summary>
+/// Unpacks QTranslate, wires up shortcuts, and takes it all away again.
+///
+/// This process never elevates itself as a whole (see app.manifest). Only the
+/// two operations that genuinely require administrator rights - placing files
+/// under Program Files and writing HKEY_LOCAL_MACHINE - relaunch this same exe
+/// elevated for just that step, via <see cref="ElevatedMove"/> and
+/// <see cref="ElevatedRemove"/>. Everything else - Options.json, the HKCU Run
+/// key, shortcuts - runs directly in this unelevated process, so it always
+/// resolves the profile of whoever is actually sitting at the keyboard.
+///
+/// That split exists because of a confirmed, documented Windows behavior:
+/// when UAC elevation is satisfied with a *different* administrator account's
+/// credentials (common when the daily account is a standard user), the whole
+/// elevated process runs as that other account, and "current user" paths -
+/// %APPDATA%, HKCU - resolve to *their* profile, not the one actually using
+/// QTranslate. A version of this installer that required elevation for its
+/// entire run silently wrote settings nobody could find afterwards.
+/// </summary>
 sealed class Deployer
 {
     public const string DisplayName = "QTranslate 6.10.0 (修正版)";
-    public const string Version = "6.10.5";
+    public const string Version = "6.10.6";
 
     const string ProcessName = "QTranslate";
     const string RunValueName = "QTranslate";
     const string SetupFileName = "QTranslate-Setup.exe";
     const string UninstallKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\QTranslate-Fixed";
     const string RunKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
+    const int ErrorCancelled = 1223; // the user clicked "No" on the UAC prompt
 
     // The stock QTranslate installer registers itself here. Left in place it
     // would show up as a second entry in Apps and Features alongside ours, and
@@ -38,16 +58,33 @@ sealed class Deployer
     {
         var wasRunning = StopQTranslate();
 
-        Directory.CreateDirectory(targetFolder);
-        Extract(targetFolder);
+        var staging = Path.Combine(Path.GetTempPath(), "qtsetup-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(staging);
+        try
+        {
+            Extract(staging);
+            PlaceFiles(staging, targetFolder);
+        }
+        finally
+        {
+            TryDeleteDirectory(staging);
+        }
 
+        var exePath = QTranslateLocator.ExePath(targetFolder);
+        if (!File.Exists(exePath))
+        {
+            throw new InvalidOperationException("安裝似乎沒有成功：找不到 " + exePath);
+        }
+        _log("已安裝程式檔案到");
+        _log("  " + targetFolder);
+
+        // Everything from here on is scoped to the current user and runs
+        // directly in this (unelevated) process - see the class remarks.
         if (options.SettingsMode is { } mode)
         {
             _log("");
             new OptionsPatcher(_log).Apply(QTranslateLocator.OptionsPath(), mode);
         }
-
-        var exePath = QTranslateLocator.ExePath(targetFolder);
 
         if (options.StartMenuShortcut)
         {
@@ -65,8 +102,6 @@ sealed class Deployer
         }
 
         SetStartup(options.RunAtStartup, exePath);
-        RemoveStockUninstaller(targetFolder);
-        CopySelfAndRegister(targetFolder, exePath);
 
         _log("");
         _log("安裝完成。");
@@ -79,19 +114,14 @@ sealed class Deployer
         SetStartup(false, null);
         RemoveShortcuts();
 
-        try
-        {
-            Registry.LocalMachine.DeleteSubKeyTree(UninstallKey, throwOnMissingSubKey: false);
-        }
-        catch (Exception ex)
-        {
-            _log("移除註冊表項目時發生問題：" + ex.Message);
-        }
-
-        // Only ever delete a folder that really holds QTranslate, never a parent.
+        // The safety check - only ever remove a folder that really holds
+        // QTranslate - just needs read access, so it happens here rather than
+        // inside the possibly-elevated step, where a refusal would otherwise
+        // go unlogged.
         if (Directory.Exists(targetFolder) && File.Exists(QTranslateLocator.ExePath(targetFolder)))
         {
-            DeleteFolder(targetFolder);
+            RemoveInstalledFiles(targetFolder);
+            _log("已刪除安裝資料夾與登錄項目");
         }
         else
         {
@@ -101,6 +131,164 @@ sealed class Deployer
         _log("");
         _log("解除安裝完成。個人設定與翻譯紀錄保留在：");
         _log("  " + Path.GetDirectoryName(QTranslateLocator.OptionsPath()));
+    }
+
+    /// <summary>
+    /// Copies the staged payload into place and does the Program-Files/HKLM
+    /// work. Called either directly in this process (when the target turns
+    /// out to be writable without elevation) or from the elevated child
+    /// process spawned for "/elevated-move" - the logic is identical either
+    /// way, only the process it runs in differs.
+    /// </summary>
+    public void ElevatedMove(string stagingFolder, string targetFolder)
+    {
+        CopyStagedFiles(stagingFolder, targetFolder);
+        RemoveStockUninstaller(targetFolder);
+        CopySelfAndRegister(targetFolder, QTranslateLocator.ExePath(targetFolder));
+    }
+
+    /// <summary>
+    /// Just the file placement, with no registry side effects - split out so
+    /// tests can verify it without touching the real machine's HKLM.
+    /// </summary>
+    public static void CopyStagedFiles(string stagingFolder, string targetFolder)
+    {
+        Directory.CreateDirectory(targetFolder);
+        foreach (var file in Directory.GetFiles(stagingFolder, "*", SearchOption.AllDirectories))
+        {
+            var relative = Path.GetRelativePath(stagingFolder, file);
+            var destination = Path.Combine(targetFolder, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(file, destination, overwrite: true);
+        }
+    }
+
+    /// <summary>The admin-only half of uninstalling: HKLM and the folder itself.</summary>
+    public void ElevatedRemove(string targetFolder)
+    {
+        try
+        {
+            Registry.LocalMachine.DeleteSubKeyTree(UninstallKey, throwOnMissingSubKey: false);
+        }
+        catch
+        {
+            // Best effort - this runs invisibly when elevated, so there is no
+            // useful place to report a failure here beyond not blocking the
+            // rest of the removal.
+        }
+
+        DeleteFolder(targetFolder);
+    }
+
+    void PlaceFiles(string stagingFolder, string targetFolder)
+    {
+        if (!NeedsElevation(targetFolder))
+        {
+            ElevatedMove(stagingFolder, targetFolder);
+            return;
+        }
+
+        _log("寫入安裝位置需要系統管理員權限，請在接下來的視窗中確認…");
+        RunElevatedHelper("/elevated-move", stagingFolder, targetFolder);
+    }
+
+    void RemoveInstalledFiles(string targetFolder)
+    {
+        if (!NeedsElevation(targetFolder))
+        {
+            ElevatedRemove(targetFolder);
+            return;
+        }
+
+        _log("移除安裝位置需要系統管理員權限，請在接下來的視窗中確認…");
+        RunElevatedHelper("/elevated-remove", targetFolder);
+    }
+
+    /// <summary>
+    /// Whether writing into this folder needs elevation, tested by actually
+    /// trying rather than guessing from the path - a portable install under
+    /// the user's own profile needs no elevation at all, while the default
+    /// Program Files location does.
+    /// </summary>
+    public static bool NeedsElevation(string targetFolder)
+    {
+        try
+        {
+            Directory.CreateDirectory(targetFolder);
+            var probe = Path.Combine(targetFolder, ".qtsetup-write-probe");
+            File.WriteAllText(probe, "probe");
+            File.Delete(probe);
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return true;
+        }
+        catch (IOException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>Relaunches this same exe elevated to run one narrow, privileged step.</summary>
+    void RunElevatedHelper(string mode, params string[] args)
+    {
+        var self = Environment.ProcessPath;
+        if (string.IsNullOrEmpty(self))
+        {
+            throw new InvalidOperationException("找不到目前執行檔的路徑，無法要求系統管理員權限。");
+        }
+
+        var startInfo = new ProcessStartInfo(self) { UseShellExecute = true, Verb = "runas" };
+        startInfo.ArgumentList.Add(mode);
+        foreach (var arg in args)
+        {
+            startInfo.ArgumentList.Add(arg);
+        }
+
+        Process process;
+        try
+        {
+            process = Process.Start(startInfo) ?? throw new InvalidOperationException("無法啟動提權程序。");
+        }
+        catch (Win32Exception ex) when (ex.NativeErrorCode == ErrorCancelled)
+        {
+            throw new InvalidOperationException("已取消系統管理員授權，操作未完成。");
+        }
+
+        using (process)
+        {
+            process.WaitForExit();
+            if (process.ExitCode != 0)
+            {
+                var detail = ReadAndClearCrashLog(mode);
+                throw new InvalidOperationException(detail is null
+                    ? "提權操作失敗（結束碼 " + process.ExitCode + "）。"
+                    : "提權操作失敗：\n" + detail);
+            }
+        }
+
+        _log("已取得系統管理員權限並完成該步驟。");
+    }
+
+    static string ReadAndClearCrashLog(string mode)
+    {
+        var phase = mode.TrimStart('/');
+        var path = Path.Combine(Path.GetTempPath(), $"qtsetup-{phase}-error.txt");
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+            var text = File.ReadAllText(path);
+            File.Delete(path);
+            return text;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public void Extract(string targetFolder)
@@ -133,13 +321,12 @@ sealed class Deployer
                 continue;
             }
 
-            Directory.CreateDirectory(Path.GetDirectoryName(destination));
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
             entry.ExtractToFile(destination, overwrite: true);
             written++;
         }
 
-        _log($"已解壓縮 {written} 個檔案到");
-        _log("  " + targetFolder);
+        _log($"已解壓縮 {written} 個檔案到暫存位置");
     }
 
     bool StopQTranslate()
@@ -322,8 +509,9 @@ sealed class Deployer
 
     void DeleteFolder(string folder)
     {
-        // During an uninstall the copy of this installer inside the folder is
-        // the file currently running, so it cannot delete itself right away.
+        // During an uninstall the copy of this installer inside the folder can
+        // be the file currently running (when launched from its own install
+        // location), so it cannot delete itself right away.
         var deferred = new List<string>();
 
         foreach (var file in Directory.GetFiles(folder, "*", SearchOption.AllDirectories))
@@ -361,13 +549,29 @@ sealed class Deployer
         _ = NativeMethods.MoveFileEx(path, null, MoveFileDelayUntilReboot);
     }
 
+    static void TryDeleteDirectory(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+        }
+        catch
+        {
+            // Leftover staging files in %TEMP% are harmless.
+        }
+    }
+
     void Launch(string exePath, bool wasRunning)
     {
         try
         {
-            // Explorer starts it as the normal user, so QTranslate does not
-            // inherit this installer's administrator rights.
-            Process.Start(new ProcessStartInfo("explorer.exe", $"\"{exePath}\"") { UseShellExecute = true });
+            // This process is not elevated (see the class remarks), so
+            // starting QTranslate directly launches it as the same user -
+            // no explorer.exe relaunch trick needed to shed elevation.
+            Process.Start(new ProcessStartInfo(exePath) { UseShellExecute = true });
             _log(wasRunning ? "QTranslate 已重新啟動。" : "QTranslate 已啟動。");
         }
         catch (Exception ex)

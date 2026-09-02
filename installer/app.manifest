@@ -5,9 +5,21 @@
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
     <security>
       <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
-        <!-- Writing into Program Files needs elevation; asking for it up front
-             means a plain double-click raises the UAC prompt. -->
-        <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
+        <!-- Deliberately NOT requireAdministrator. Writing into Program Files
+             needs elevation, but Options.json, the HKCU Run key, and the
+             Start Menu/Desktop shortcuts belong to the actual logged-in user
+             and must NOT be written under an elevated token - if UAC elevation
+             is satisfied with a *different* administrator account's
+             credentials (common on machines where the daily account is a
+             standard user), the whole process runs as that other account and
+             every "current user" path resolves to *their* profile instead.
+             Confirmed via Microsoft Q&A: this is exactly why installations
+             elevated this way silently write settings nobody can find
+             afterwards. So this process starts unelevated, and only the
+             specific step that needs admin rights (copying into Program
+             Files, writing HKLM) relaunches itself elevated for just that
+             step - see Deployer.ElevatedMove. -->
+        <requestedExecutionLevel level="asInvoker" uiAccess="false" />
       </requestedPrivileges>
     </security>
   </trustInfo>
