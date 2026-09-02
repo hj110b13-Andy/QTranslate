@@ -103,7 +103,7 @@ if (-not (Test-Path -LiteralPath $options)) {
 
         # 快速鍵單獨處理：數字看不出對錯，解讀成人看得懂的形式並比對預期值。
         foreach ($hk in @(
-                @{ Key = 'HotKeyTextRecognition'; Label = '畫面框選翻譯'; Expect = 33280 }
+                @{ Key = 'HotKeyTextRecognition'; Label = '畫面框選翻譯'; Expect = 1619 }
                 @{ Key = 'HotKeyMainWindow';      Label = '主視窗';       Expect = 849 }
                 @{ Key = 'HotKeyPopupWindow';     Label = '彈出視窗翻譯'; Expect = 593 }
                 @{ Key = 'HotKeyListenText';      Label = '朗讀選取文字'; Expect = 581 })) {
@@ -202,6 +202,19 @@ if ($found.Count -eq 0) { Say '  找不到任何 QTranslate 安裝。' }
 if ($found.Count -gt 1) {
     Say '[問題] 這台電腦有多份 QTranslate，可能會互相干擾。'
 }
+if ($found | Where-Object { $_ -like '*Program Files*' }) {
+    Say '  裝在 Program Files 底下：安裝/解除安裝時需要系統管理員權限。'
+    Say '  v6.10.7 起新安裝預設改到 %LocalAppData%，完全不需要提權；'
+    Say '  這份是舊版留下的，或是刻意選了 Program Files，不代表有問題。'
+}
+
+Say ''
+Say '應用程式與功能登錄項目：'
+$ownHkcu = Get-ItemProperty 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\QTranslate-Fixed' -ErrorAction SilentlyContinue
+$ownHklm = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\QTranslate-Fixed' -ErrorAction SilentlyContinue
+if ($ownHkcu) { Say "  HKCU（v6.10.7 起使用）: $($ownHkcu.DisplayVersion)，位置 $($ownHkcu.InstallLocation)" }
+if ($ownHklm) { Say "  HKLM（舊版留下）      : $($ownHklm.DisplayVersion)，位置 $($ownHklm.InstallLocation)" }
+if (-not $ownHkcu -and -not $ownHklm) { Say '  找不到登錄項目（可能是尚未完成安裝，或用手動修補而非完整安裝檔）。' }
 
 # ---------------------------------------------------------------- 開機啟動
 Section '開機自動啟動'

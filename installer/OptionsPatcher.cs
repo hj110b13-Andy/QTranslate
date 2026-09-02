@@ -26,10 +26,22 @@ sealed class OptionsPatcher
 
     // QTranslate encodes a hotkey as (modifiers << 8) | virtual-key, where the
     // modifier bits are Alt=1, Ctrl=2, Shift=4, and 0x80 marks a double tap.
-    const int DoubleTapCtrl = 0x8200;   // 33280
-    const int CtrlAltQ = 0x0351;        // 849
-    const int CtrlQ = 0x0251;           // 593
-    const int CtrlE = 0x0245;           // 581
+    //
+    // The screen-capture hotkey deliberately does NOT use the double-tap
+    // encoding. QTranslate.exe registers "double-tap Ctrl" as
+    // RegisterHotKey(MOD_CONTROL, vk=0) - bare Ctrl, no key - and does its own
+    // internal timing check to tell a first tap from a second one. That
+    // internal check is unreliable on some machines: a single Ctrl press can
+    // fire the overlay straight away. A real modifier+key combo needs no such
+    // app-side timing at all - Windows itself only fires WM_HOTKEY once every
+    // one of the modifiers and the key are down together - so it cannot
+    // exhibit this failure mode. (Confirmed against ahatem/QTranslate, an
+    // unrelated reimplementation that also avoids any tap-count gesture for
+    // exactly this reason - all of its global hotkeys are plain combos.)
+    const int CtrlAltQ = 0x0351;         // 849
+    const int CtrlQ = 0x0251;            // 593
+    const int CtrlE = 0x0245;            // 581
+    const int CtrlShiftS = 0x0653;       // 1619 - Ctrl+Shift+S, screen capture
 
     const string OcrKeyName = "OcrApiKey";
 
@@ -59,7 +71,7 @@ sealed class OptionsPatcher
         new("EnableMouseModeOnCtrl", "true", "按住 Ctrl 選取文字才翻譯"),
         new("InstantTranslation", "true", "主視窗即時翻譯"),
         new("EnableHotKeys", "true", "啟用全域快速鍵"),
-        new("HotKeyTextRecognition", DoubleTapCtrl.ToString(), "連點兩下 Ctrl：畫面框選翻譯"),
+        new("HotKeyTextRecognition", CtrlShiftS.ToString(), "Ctrl+Shift+S：畫面框選翻譯"),
         new("HotKeyMainWindow", CtrlAltQ.ToString(), "Ctrl+Alt+Q：主視窗"),
         new("HotKeyPopupWindow", CtrlQ.ToString(), "Ctrl+Q：彈出視窗翻譯"),
         new("HotKeyListenText", CtrlE.ToString(), "Ctrl+E：朗讀選取文字"),

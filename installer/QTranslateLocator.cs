@@ -6,8 +6,11 @@ namespace QTranslateFix;
 static class QTranslateLocator
 {
     const string ExeName = "QTranslate.exe";
+    const string OwnUninstallKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\QTranslate-Fixed";
 
-    static readonly string[] RegistryKeys =
+    // The stock installer only ever registers per-machine (HKLM). Our own
+    // installer registers per-user (HKCU) - see the remarks on Deployer.
+    static readonly string[] StockRegistryKeys =
     {
         @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\QTranslate",
         @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\QTranslate",
@@ -22,9 +25,15 @@ static class QTranslateLocator
             return overridden;
         }
 
-        foreach (var key in RegistryKeys)
+        var own = FromRegistry(Registry.CurrentUser, OwnUninstallKey);
+        if (IsInstallFolder(own))
         {
-            var folder = FromRegistry(key);
+            return own;
+        }
+
+        foreach (var key in StockRegistryKeys)
+        {
+            var folder = FromRegistry(Registry.LocalMachine, key);
             if (IsInstallFolder(folder))
             {
                 return folder;
@@ -33,6 +42,7 @@ static class QTranslateLocator
 
         foreach (var root in new[]
                  {
+                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                      Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
                      Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
                  })
@@ -51,11 +61,20 @@ static class QTranslateLocator
         return null;
     }
 
-    static string FromRegistry(string keyPath)
+    /// <summary>
+    /// Where a new install should default to. %LocalAppData% needs no
+    /// administrator rights at all, unlike Program Files - see the remarks
+    /// on Deployer for why that matters. Program Files is still available by
+    /// browsing to it manually.
+    /// </summary>
+    public static string DefaultInstallFolder() =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "QTranslate");
+
+    static string FromRegistry(RegistryKey hive, string keyPath)
     {
         try
         {
-            using var key = Registry.LocalMachine.OpenSubKey(keyPath);
+            using var key = hive.OpenSubKey(keyPath);
             if (key is null)
             {
                 return null;
@@ -66,8 +85,9 @@ static class QTranslateLocator
                 return location.Trim().Trim('"');
             }
 
-            // QTranslate leaves InstallLocation empty, but the uninstaller sits
-            // in the install folder, so its directory is the answer.
+            // A fallback in case InstallLocation is ever missing: the
+            // uninstaller sits in the install folder, so its directory is
+            // the answer too.
             if (key.GetValue("UninstallString") is string uninstall && !string.IsNullOrWhiteSpace(uninstall))
             {
                 return Path.GetDirectoryName(uninstall.Trim().Trim('"'));

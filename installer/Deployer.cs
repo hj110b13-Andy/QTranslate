@@ -9,13 +9,17 @@ namespace QTranslateFix;
 /// <summary>
 /// Unpacks QTranslate, wires up shortcuts, and takes it all away again.
 ///
-/// This process never elevates itself as a whole (see app.manifest). Only the
-/// two operations that genuinely require administrator rights - placing files
-/// under Program Files and writing HKEY_LOCAL_MACHINE - relaunch this same exe
-/// elevated for just that step, via <see cref="ElevatedMove"/> and
-/// <see cref="ElevatedRemove"/>. Everything else - Options.json, the HKCU Run
-/// key, shortcuts - runs directly in this unelevated process, so it always
-/// resolves the profile of whoever is actually sitting at the keyboard.
+/// This process never elevates itself as a whole (see app.manifest), and by
+/// default it doesn't need to at all: the default install location is
+/// %LocalAppData%, and this installer's own Apps-and-Features entry lives in
+/// HKEY_CURRENT_USER, not HKEY_LOCAL_MACHINE - both writable by a completely
+/// ordinary, unprivileged process. Only placing files under a location that
+/// genuinely requires it (Program Files, if the user picks it deliberately)
+/// relaunches this same exe elevated for just that one step, via
+/// <see cref="ElevatedMove"/> / <see cref="ElevatedRemove"/>. Options.json,
+/// the HKCU Run key, shortcuts, and this installer's own registration always
+/// run directly in this unelevated process, so they always resolve the
+/// profile of whoever is actually sitting at the keyboard.
 ///
 /// That split exists because of a confirmed, documented Windows behavior:
 /// when UAC elevation is satisfied with a *different* administrator account's
@@ -23,16 +27,22 @@ namespace QTranslateFix;
 /// elevated process runs as that other account, and "current user" paths -
 /// %APPDATA%, HKCU - resolve to *their* profile, not the one actually using
 /// QTranslate. A version of this installer that required elevation for its
-/// entire run silently wrote settings nobody could find afterwards.
+/// entire run silently wrote settings nobody could find afterwards. Defaulting
+/// to a location and a registry hive that need no elevation at all removes
+/// that failure mode by construction rather than working around it - the same
+/// principle an unrelated, portable reimplementation (ahatem/QTranslate) uses
+/// by keeping all of its own state next to its own executable.
 /// </summary>
 sealed class Deployer
 {
     public const string DisplayName = "QTranslate 6.10.0 (修正版)";
-    public const string Version = "6.10.6";
+    public const string Version = "6.10.7";
 
     const string ProcessName = "QTranslate";
     const string RunValueName = "QTranslate";
     const string SetupFileName = "QTranslate-Setup.exe";
+
+    // Ours - HKCU, no elevation ever needed to read or write it.
     const string UninstallKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\QTranslate-Fixed";
     const string RunKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
     const int ErrorCancelled = 1223; // the user clicked "No" on the UAC prompt
@@ -78,8 +88,15 @@ sealed class Deployer
         _log("已安裝程式檔案到");
         _log("  " + targetFolder);
 
-        // Everything from here on is scoped to the current user and runs
-        // directly in this (unelevated) process - see the class remarks.
+        // Everything from here on is scoped to the current user and always
+        // runs directly in this (unelevated) process - see the class remarks.
+        // This includes our own Apps-and-Features registration: it used to
+        // happen inside ElevatedMove, but that meant it ran as whichever
+        // account UAC elevated to, which is the exact hazard this class
+        // exists to avoid - it just showed up as a cosmetic Control Panel
+        // entry instead of a missing setting, so it went unnoticed longer.
+        RegisterUninstaller(targetFolder, exePath);
+
         if (options.SettingsMode is { } mode)
         {
             _log("");
@@ -114,6 +131,18 @@ sealed class Deployer
         SetStartup(false, null);
         RemoveShortcuts();
 
+        // Our own registration is HKCU - always unelevated, always in this
+        // process, regardless of whether the folder itself needs elevation.
+        try
+        {
+            Registry.CurrentUser.DeleteSubKeyTree(UninstallKey, throwOnMissingSubKey: false);
+            _log("已移除「應用程式與功能」登錄項目");
+        }
+        catch (Exception ex)
+        {
+            _log("移除登錄項目時發生問題：" + ex.Message);
+        }
+
         // The safety check - only ever remove a folder that really holds
         // QTranslate - just needs read access, so it happens here rather than
         // inside the possibly-elevated step, where a refusal would otherwise
@@ -121,7 +150,6 @@ sealed class Deployer
         if (Directory.Exists(targetFolder) && File.Exists(QTranslateLocator.ExePath(targetFolder)))
         {
             RemoveInstalledFiles(targetFolder);
-            _log("已刪除安裝資料夾與登錄項目");
         }
         else
         {
@@ -134,17 +162,19 @@ sealed class Deployer
     }
 
     /// <summary>
-    /// Copies the staged payload into place and does the Program-Files/HKLM
-    /// work. Called either directly in this process (when the target turns
-    /// out to be writable without elevation) or from the elevated child
-    /// process spawned for "/elevated-move" - the logic is identical either
-    /// way, only the process it runs in differs.
+    /// Copies the staged payload into place and removes the stock installer's
+    /// HKLM entry if one exists there - the only two things that can
+    /// genuinely require administrator rights (Program Files, another
+    /// program's HKLM key). Called either directly in this process (when the
+    /// target turns out to be writable without elevation) or from the
+    /// elevated child process spawned for "/elevated-move" - the logic is
+    /// identical either way, only the process it runs in differs.
     /// </summary>
     public void ElevatedMove(string stagingFolder, string targetFolder)
     {
         CopyStagedFiles(stagingFolder, targetFolder);
         RemoveStockUninstaller(targetFolder);
-        CopySelfAndRegister(targetFolder, QTranslateLocator.ExePath(targetFolder));
+        CopySelfInto(targetFolder);
     }
 
     /// <summary>
@@ -163,22 +193,13 @@ sealed class Deployer
         }
     }
 
-    /// <summary>The admin-only half of uninstalling: HKLM and the folder itself.</summary>
-    public void ElevatedRemove(string targetFolder)
-    {
-        try
-        {
-            Registry.LocalMachine.DeleteSubKeyTree(UninstallKey, throwOnMissingSubKey: false);
-        }
-        catch
-        {
-            // Best effort - this runs invisibly when elevated, so there is no
-            // useful place to report a failure here beyond not blocking the
-            // rest of the removal.
-        }
-
-        DeleteFolder(targetFolder);
-    }
+    /// <summary>
+    /// The admin-only half of uninstalling: deleting the folder itself, needed
+    /// only when it lives somewhere like Program Files. Our own HKCU
+    /// registration is removed separately in the always-unelevated parent -
+    /// see <see cref="Uninstall"/>.
+    /// </summary>
+    public void ElevatedRemove(string targetFolder) => DeleteFolder(targetFolder);
 
     void PlaceFiles(string stagingFolder, string targetFolder)
     {
@@ -470,22 +491,40 @@ sealed class Deployer
         }
     }
 
-    void CopySelfAndRegister(string targetFolder, string exePath)
+    /// <summary>
+    /// Keeps a copy of this installer beside the program - that's what lets
+    /// the Apps-and-Features entry launch it again to uninstall later. This
+    /// is a file placed inside targetFolder, so - unlike the registry entry
+    /// itself - it does need to run wherever ElevatedMove runs.
+    /// </summary>
+    void CopySelfInto(string targetFolder)
     {
-        var setupPath = Path.Combine(targetFolder, SetupFileName);
-
         try
         {
-            // Keeping a copy of this installer beside the program is what makes
-            // the entry in Apps and Features able to uninstall later.
             var self = Environment.ProcessPath;
+            var setupPath = Path.Combine(targetFolder, SetupFileName);
             if (!string.IsNullOrEmpty(self) &&
                 !string.Equals(Path.GetFullPath(self), Path.GetFullPath(setupPath), StringComparison.OrdinalIgnoreCase))
             {
                 File.Copy(self, setupPath, overwrite: true);
             }
+        }
+        catch (Exception ex)
+        {
+            _log("複製安裝程式到安裝目錄時發生問題：" + ex.Message);
+        }
+    }
 
-            using var key = Registry.LocalMachine.CreateSubKey(UninstallKey, writable: true);
+    /// <summary>
+    /// Registers the Apps-and-Features entry under HKCU - always unelevated,
+    /// regardless of where targetFolder itself needed elevation to write to.
+    /// </summary>
+    void RegisterUninstaller(string targetFolder, string exePath)
+    {
+        try
+        {
+            var setupPath = Path.Combine(targetFolder, SetupFileName);
+            using var key = Registry.CurrentUser.CreateSubKey(UninstallKey, writable: true);
             if (key is null)
             {
                 return;

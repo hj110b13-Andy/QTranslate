@@ -157,8 +157,12 @@ sealed class MainForm : Form
     void Prefill()
     {
         var existing = QTranslateLocator.Find();
-        _folder.Text = existing ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "QTranslate");
+        // An existing install (found via HKCU or the stock HKLM entry) always
+        // wins, so upgrades land where the program already is. A brand new
+        // install defaults to %LocalAppData% - writable without elevation -
+        // rather than Program Files. Program Files is still one click away
+        // via "瀏覽…" for anyone who wants a machine-wide install.
+        _folder.Text = existing ?? QTranslateLocator.DefaultInstallFolder();
 
         _startMenu.Checked = !_uninstallMode;
         _desktop.Checked = false;
