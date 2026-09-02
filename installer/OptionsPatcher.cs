@@ -41,7 +41,7 @@ sealed class OptionsPatcher
     const int CtrlAltQ = 0x0351;         // 849
     const int CtrlQ = 0x0251;            // 593
     const int CtrlE = 0x0245;            // 581
-    const int CtrlShiftS = 0x0653;       // 1619 - Ctrl+Shift+S, screen capture
+    const int CtrlAltS = 0x0353;         // 851 - Ctrl+Alt+S, screen capture
 
     const string OcrKeyName = "OcrApiKey";
 
@@ -71,7 +71,7 @@ sealed class OptionsPatcher
         new("EnableMouseModeOnCtrl", "true", "按住 Ctrl 選取文字才翻譯"),
         new("InstantTranslation", "true", "主視窗即時翻譯"),
         new("EnableHotKeys", "true", "啟用全域快速鍵"),
-        new("HotKeyTextRecognition", CtrlShiftS.ToString(), "Ctrl+Shift+S：畫面框選翻譯"),
+        new("HotKeyTextRecognition", CtrlAltS.ToString(), "Ctrl+Alt+S：畫面框選翻譯"),
         new("HotKeyMainWindow", CtrlAltQ.ToString(), "Ctrl+Alt+Q：主視窗"),
         new("HotKeyPopupWindow", CtrlQ.ToString(), "Ctrl+Q：彈出視窗翻譯"),
         new("HotKeyListenText", CtrlE.ToString(), "Ctrl+E：朗讀選取文字"),

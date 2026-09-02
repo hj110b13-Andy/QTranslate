@@ -64,7 +64,11 @@ SupportedLanguages = [-1, "auto", "af", "az", "sq", "ar", "hy", "eu", "be", "bg"
 // - a heading, or the last line of a paragraph - stops with room to spare. So
 // the test is simply: would the first word of the next line have fit here?
 // ---------------------------------------------------------------------------
-var LIST_ITEM = /^([\-\*\u2022\u00b7\u25cf\u25aa\u25e6\u2013\u2014]|\d+[.)]|\(\s*[0-9a-zA-Z]+\s*\)|[a-zA-Z][.)])\s+/;
+// The parenthesised-label branch only matches short, lowercase-or-numeric
+// labels ("(a)", "(iv)", "(12)") - the kind an outline actually uses. A
+// longer or mixed-case run like "(mAP)" or "(RGB)" is an acronym that
+// happens to start a wrapped line, not a list marker, and must not match.
+var LIST_ITEM = /^([\-\*\u2022\u00b7\u25cf\u25aa\u25e6\u2013\u2014]|\d+[.)]|\(\s*(?:\d{1,3}|[a-z]{1,4})\s*\)|[a-zA-Z][.)])\s+/;
 var SENTENCE_END = /[.!?:;\u3002\uff01\uff1f\uff1a\uff1b][\"'\u201d\u2019\)\]]*$/;
 var TRAILING_HYPHEN = /[\-\u2010]$/;
 var LOWERCASE_HEAD = /^[a-z\u00e0-\u00ff]/;
@@ -99,6 +103,25 @@ function visualWidth(text) {
     return width;
 }
 
+// The column width is the *median* line width, not the widest line. A PDF
+// copy-paste occasionally drops a line break - an abstract that spans the
+// full page width above two-column body text is a common case - leaving
+// one or two lines far longer than the rest. Taking the max would let a
+// couple of outliers set the column so high that every genuinely wrapped
+// line looks like it had room to spare, and none of them would be rejoined.
+// The median describes what most lines actually look like and ignores
+// outliers on either side.
+function medianWidth(widths) {
+    if (!widths.length) {
+        return 0;
+    }
+    var sorted = widths.slice().sort(function (a, b) { return a - b; });
+    var mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2
+        ? sorted[mid]
+        : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
+}
+
 function unwrapText(text) {
     if (!text || text.indexOf("\n") < 0) {
         return text;
@@ -106,19 +129,33 @@ function unwrapText(text) {
 
     var raw = text.replace(/\r\n|\r/g, "\n").split("\n");
     var lines = [];
-    var column = 0;
+    var widths = [];
+    var maxWidth = 0;
     var i;
 
     for (i = 0; i < raw.length; i++) {
         var trimmed = trimString(raw[i]);
         lines.push(trimmed);
-        var width = visualWidth(trimmed);
-        if (width > column) {
-            column = width;
+        if (trimmed) {
+            var width = visualWidth(trimmed);
+            widths.push(width);
+            if (width > maxWidth) {
+                maxWidth = width;
+            }
         }
     }
 
-    if (column < MIN_COLUMN || column > MAX_COLUMN) {
+    // A single line past MAX_COLUMN means the text arrives already joined
+    // (or was pasted from somewhere without wrapping at all) - the median
+    // of the rest doesn't matter, this one line is reason enough to leave
+    // everything alone.
+    if (maxWidth > MAX_COLUMN) {
+        return text;
+    }
+
+    var column = medianWidth(widths);
+
+    if (column < MIN_COLUMN) {
         return text;
     }
 

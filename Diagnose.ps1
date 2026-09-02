@@ -136,7 +136,7 @@ if (-not (Test-Path -LiteralPath $options)) {
 
         # 快速鍵單獨處理：數字看不出對錯，解讀成人看得懂的形式並比對預期值。
         foreach ($hk in @(
-                @{ Key = 'HotKeyTextRecognition'; Label = '畫面框選翻譯'; Expect = 1619 }
+                @{ Key = 'HotKeyTextRecognition'; Label = '畫面框選翻譯'; Expect = 851 }
                 @{ Key = 'HotKeyMainWindow';      Label = '主視窗';       Expect = 849 }
                 @{ Key = 'HotKeyPopupWindow';     Label = '彈出視窗翻譯'; Expect = 593 }
                 @{ Key = 'HotKeyListenText';      Label = '朗讀選取文字'; Expect = 581 })) {
