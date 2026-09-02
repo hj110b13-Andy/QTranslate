@@ -12,7 +12,7 @@
     <RootNamespace>QTranslateFix</RootNamespace>
     <Product>QTranslate 安裝程式</Product>
     <AssemblyTitle>QTranslate 安裝程式</AssemblyTitle>
-    <Version>6.10.7</Version>
+    <Version>6.10.8</Version>
     <InvariantGlobalization>true</InvariantGlobalization>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>

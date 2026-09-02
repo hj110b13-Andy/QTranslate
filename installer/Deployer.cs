@@ -1,6 +1,7 @@
 ﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Linq;
 using System.Reflection;
 using Microsoft.Win32;
 
@@ -36,7 +37,7 @@ namespace QTranslateFix;
 sealed class Deployer
 {
     public const string DisplayName = "QTranslate 6.10.0 (修正版)";
-    public const string Version = "6.10.7";
+    public const string Version = "6.10.8";
 
     const string ProcessName = "QTranslate";
     const string RunValueName = "QTranslate";
@@ -100,7 +101,7 @@ sealed class Deployer
         if (options.SettingsMode is { } mode)
         {
             _log("");
-            new OptionsPatcher(_log).Apply(QTranslateLocator.OptionsPath(), mode);
+            new OptionsPatcher(_log).Apply(QTranslateLocator.OptionsPath(targetFolder), mode);
         }
 
         if (options.StartMenuShortcut)
@@ -158,7 +159,7 @@ sealed class Deployer
 
         _log("");
         _log("解除安裝完成。個人設定與翻譯紀錄保留在：");
-        _log("  " + Path.GetDirectoryName(QTranslateLocator.OptionsPath()));
+        _log("  " + Path.GetDirectoryName(QTranslateLocator.OptionsPath(targetFolder)));
     }
 
     /// <summary>
@@ -551,10 +552,23 @@ sealed class Deployer
         // During an uninstall the copy of this installer inside the folder can
         // be the file currently running (when launched from its own install
         // location), so it cannot delete itself right away.
+        //
+        // Data\ holds the user's settings, translation history, and
+        // dictionary lookups (see QTranslateLocator.OptionsPath) - it lives
+        // inside the install folder, not the roaming profile, so deleting
+        // the folder outright would destroy them. Keep it, both so an
+        // uninstall doesn't throw away things the user never asked to lose,
+        // and so reinstalling to the same folder picks the settings back up.
+        var dataFolder = Path.Combine(folder, "Data") + Path.DirectorySeparatorChar;
         var deferred = new List<string>();
 
         foreach (var file in Directory.GetFiles(folder, "*", SearchOption.AllDirectories))
         {
+            if (file.StartsWith(dataFolder, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
             try
             {
                 File.Delete(file);
@@ -565,10 +579,30 @@ sealed class Deployer
             }
         }
 
+        // Remove now-empty subfolders, deepest first, but never Data\ itself.
+        foreach (var dir in Directory.GetDirectories(folder, "*", SearchOption.AllDirectories)
+                     .OrderByDescending(d => d.Length))
+        {
+            var withSeparator = dir + Path.DirectorySeparatorChar;
+            if (withSeparator.Equals(dataFolder, StringComparison.OrdinalIgnoreCase) ||
+                dataFolder.StartsWith(withSeparator, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            try
+            {
+                Directory.Delete(dir);
+            }
+            catch
+            {
+                // Not empty (deferred files still inside) - leave it.
+            }
+        }
+
         if (deferred.Count == 0)
         {
-            Directory.Delete(folder, recursive: true);
-            _log("已刪除安裝資料夾");
+            _log("已刪除安裝資料夾（保留 Data\\ 底下的個人設定與翻譯紀錄）");
             return;
         }
 
@@ -578,8 +612,6 @@ sealed class Deployer
             _log("  " + Path.GetFileName(file));
             ScheduleDeleteOnReboot(file);
         }
-
-        ScheduleDeleteOnReboot(folder);
     }
 
     static void ScheduleDeleteOnReboot(string path)

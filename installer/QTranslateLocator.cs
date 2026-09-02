@@ -110,6 +110,10 @@ static class QTranslateLocator
     public static string ServiceFolder(string installFolder) =>
         Path.Combine(installFolder, "Services", "Google Translate");
 
-    public static string OptionsPath() => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "QTranslate", "Options.json");
+    // QTranslate is a portable-style app: it keeps Options.json (and its
+    // history files) in a "Data" folder next to the exe, not in the
+    // roaming %APPDATA% profile. Writing to %APPDATA%\QTranslate\Options.json
+    // - what this used to do - produces a file QTranslate.exe never reads,
+    // so every setting silently reverts to the exe's built-in defaults.
+    public static string OptionsPath(string installFolder) => Path.Combine(installFolder, "Data", "Options.json");
 }

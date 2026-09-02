@@ -60,13 +60,46 @@ function Decode-HotKey([int]$value) {
 Say "QTranslate 設定診斷    $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 Say "電腦: $env:COMPUTERNAME    使用者: $env:USERNAME"
 
+# ---------------------------------------------------------------- 安裝位置
+# 先找出安裝位置，才能推算 Options.json 的正確路徑——QTranslate 是可攜式
+# 風格的程式，設定、翻譯紀錄、字典查詢紀錄都存在安裝資料夾底下的 Data\
+# 子資料夾，不是系統的 %APPDATA% 漫遊路徑。舊版診斷工具檢查的是
+# %APPDATA%\QTranslate\Options.json，那個檔案 QTranslate.exe 從來不讀，
+# 難怪每次都回報「找不到 Options.json」，其實是查錯地方。
+function Find-InstallFolder {
+    $override = $env:QTRANSLATE_DIR
+    if ($override -and (Test-Path -LiteralPath (Join-Path $override 'QTranslate.exe'))) { return $override }
+
+    foreach ($regPath in @(
+            'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\QTranslate-Fixed',
+            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\QTranslate-Fixed',
+            'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\QTranslate')) {
+        $loc = (Get-ItemProperty $regPath -ErrorAction SilentlyContinue).InstallLocation
+        if ($loc -and (Test-Path -LiteralPath (Join-Path $loc 'QTranslate.exe'))) { return $loc }
+    }
+
+    foreach ($root in @($env:LOCALAPPDATA, ${env:ProgramFiles(x86)}, $env:ProgramFiles)) {
+        if (-not $root) { continue }
+        $candidate = Join-Path $root 'QTranslate'
+        if (Test-Path -LiteralPath (Join-Path $candidate 'QTranslate.exe')) { return $candidate }
+    }
+
+    return $null
+}
+
+$installFolder = Find-InstallFolder
+
 # ---------------------------------------------------------------- 設定檔
 Section '設定檔'
 
-$appData = [Environment]::GetFolderPath('ApplicationData')
-Say "目前處理程序看到的 APPDATA: $appData"
-$optionsDir = Join-Path $appData 'QTranslate'
-$options = Join-Path $optionsDir 'Options.json'
+if (-not $installFolder) {
+    Say '[問題] 找不到 QTranslate 的安裝位置，無法檢查設定檔。'
+    $optionsDir = $null
+    $options = $null
+} else {
+    Say "安裝位置: $installFolder"
+    $optionsDir = Join-Path $installFolder 'Data'
+    $options = Join-Path $optionsDir 'Options.json'
 
 if (-not (Test-Path -LiteralPath $optionsDir)) {
     Say "[問題] 設定資料夾不存在: $optionsDir"
@@ -144,6 +177,7 @@ if (-not (Test-Path -LiteralPath $options)) {
     } catch {
         Say "[問題] 寫入測試失敗: $($_.Exception.Message)"
     }
+}
 }
 
 # ---------------------------------------------------------------- 執行中的程序
