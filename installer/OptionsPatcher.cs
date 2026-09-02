@@ -63,7 +63,7 @@ sealed class OptionsPatcher
         new("HotKeyMainWindow", CtrlAltQ.ToString(), "Ctrl+Alt+Q：主視窗"),
         new("HotKeyPopupWindow", CtrlQ.ToString(), "Ctrl+Q：彈出視窗翻譯"),
         new("HotKeyListenText", CtrlE.ToString(), "Ctrl+E：朗讀選取文字"),
-        new("MidSplitterPos", "1", "收合原文框，主視窗只顯示譯文"),
+        new("MidSplitterPos", "200", "主視窗原文/譯文各佔約一半"),
         new("ShowMiddlePane", "false", "隱藏語言選擇工具列"),
         new("ShowServicesPane", "false", "隱藏底部服務圖示列", Section: "General"),
     };

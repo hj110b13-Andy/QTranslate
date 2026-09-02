@@ -9,7 +9,7 @@ namespace QTranslateFix;
 sealed class Deployer
 {
     public const string DisplayName = "QTranslate 6.10.0 (修正版)";
-    public const string Version = "6.10.3";
+    public const string Version = "6.10.4";
 
     const string ProcessName = "QTranslate";
     const string RunValueName = "QTranslate";

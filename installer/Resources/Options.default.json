@@ -13,8 +13,8 @@
    "Contents": {
       "EditBackTranslation": "",
       "SaveOnExit": true,
-      "EditTranslation": "Ctrl+Alt+Q",
-      "EditSource": "Ctrl+Alt+Q"
+      "EditTranslation": "女性\r\r形容詞:\r    雌 (female)\r    女的 (female)\r\r名詞:\r    雌性 (female)\r    母 (female, mother)\r    女 (daughter, female, frail, girl, woman)\r    女性 (female)\r    女子 (female, woman, frail, she)\r    牝 (female)",
+      "EditSource": "female"
    },
    "Advanced": {
       "EnableSlowerListening": true,
@@ -114,7 +114,7 @@
       "LanguageTo": 1,
       "WindowDictionaryPlacement": "",
       "ShowTopPane": true,
-      "MidSplitterPos": 1,
+      "MidSplitterPos": 200,
       "LanguageFrom": 1,
       "LocaleFoderName": "Chinese (Traditional)",
       "ReadPhonetically": false,
