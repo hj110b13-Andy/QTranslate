@@ -70,6 +70,7 @@ var TRAILING_HYPHEN = /[\-\u2010]$/;
 var LOWERCASE_HEAD = /^[a-z\u00e0-\u00ff]/;
 var CJK_TAIL = /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]$/;
 var CJK_HEAD = /^[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]/;
+var CJK_CHAR = /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]/;
 
 // Proportional fonts mean a character count is only an approximation of the
 // column, so allow a few characters of slack before calling a break deliberate.
@@ -85,6 +86,19 @@ var MAX_COLUMN = 200;
 // heading rather than as the tail of a paragraph.
 var HEADING_RATIO = 0.5;
 
+// A CJK character takes up roughly twice the horizontal space of a Latin
+// one, so column-width comparisons use this instead of raw character
+// count - otherwise MIN_COLUMN/MAX_COLUMN, tuned for Latin prose, would
+// almost never trigger on CJK text: a wrapped Chinese paragraph rarely
+// reaches 45 raw characters per line even though it fills the same width.
+function visualWidth(text) {
+    var width = 0;
+    for (var i = 0; i < text.length; i++) {
+        width += CJK_CHAR.test(text.charAt(i)) ? 2 : 1;
+    }
+    return width;
+}
+
 function unwrapText(text) {
     if (!text || text.indexOf("\n") < 0) {
         return text;
@@ -98,8 +112,9 @@ function unwrapText(text) {
     for (i = 0; i < raw.length; i++) {
         var trimmed = trimString(raw[i]);
         lines.push(trimmed);
-        if (trimmed.length > column) {
-            column = trimmed.length;
+        var width = visualWidth(trimmed);
+        if (width > column) {
+            column = width;
         }
     }
 
@@ -156,7 +171,7 @@ function pushBlank(out) {
 // Give a heading a blank line of its own so the structure survives into the
 // translation - the translator keeps the line breaks it is handed.
 function appendHeadingGap(out, line, column) {
-    if (SENTENCE_END.test(line) || LIST_ITEM.test(line) || line.length >= column * HEADING_RATIO) {
+    if (SENTENCE_END.test(line) || LIST_ITEM.test(line) || visualWidth(line) >= column * HEADING_RATIO) {
         return false;
     }
     out.push("");
@@ -175,9 +190,9 @@ function keepsBreak(previousLine, next, column) {
     }
     // How much room would the next line's first unit have needed? If it would
     // have fit, the break was deliberate. CJK has no word spacing, so a single
-    // character is enough to show there was room left.
-    var unit = CJK_HEAD.test(next) ? 1 : firstWord(next).length;
-    return previousLine.length + 1 + unit <= column - WIDTH_SLACK;
+    // character (2 width units) is enough to show there was room left.
+    var unit = CJK_HEAD.test(next) ? 2 : visualWidth(firstWord(next));
+    return visualWidth(previousLine) + 1 + unit <= column - WIDTH_SLACK;
 }
 
 function firstWord(text) {
