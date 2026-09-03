@@ -89,6 +89,16 @@ var MAX_COLUMN = 200;
 // A line this much shorter than the column, not ending a sentence, reads as a
 // heading rather than as the tail of a paragraph.
 var HEADING_RATIO = 0.5;
+// How many of the most recently merged lines' widths to keep as the local
+// column estimate - see the note on WINDOW_SIZE / SURGE_RATIO below.
+var WINDOW_SIZE = 4;
+// A line (or the region it belongs to) whose width crosses this multiple of
+// the current column is read as a font-size change, not a wrapped line.
+var SURGE_RATIO = 1.6;
+// How close the line *after* a width jump has to land to the jumped-to width
+// for that jump to count as the start of a persisting new region, rather
+// than a single line that just happened not to get wrapped.
+var PERSIST_RATIO = 0.3;
 
 // A CJK character takes up roughly twice the horizontal space of a Latin
 // one, so column-width comparisons use this instead of raw character
@@ -103,14 +113,6 @@ function visualWidth(text) {
     return width;
 }
 
-// The column width is the *median* line width, not the widest line. A PDF
-// copy-paste occasionally drops a line break - an abstract that spans the
-// full page width above two-column body text is a common case - leaving
-// one or two lines far longer than the rest. Taking the max would let a
-// couple of outliers set the column so high that every genuinely wrapped
-// line looks like it had room to spare, and none of them would be rejoined.
-// The median describes what most lines actually look like and ignores
-// outliers on either side.
 function medianWidth(widths) {
     if (!widths.length) {
         return 0;
@@ -122,6 +124,30 @@ function medianWidth(widths) {
         : Math.round((sorted[mid - 1] + sorted[mid]) / 2);
 }
 
+// A screen capture can catch a large-font heading directly above small-font
+// body text, with no blank line between them - the heading's lines are
+// naturally much narrower than the body's, so no single column width can
+// judge both correctly. A jump away from the current column only means the
+// text entered a different region (heading <-> body) if the line *after*
+// the jump keeps roughly that new width too; a single freak-width line
+// surrounded by normal ones (a PDF copy that happened to drop one line
+// break) is not a region change and should still be free to merge.
+function entersNewRegion(column, nextWidth, afterWidth) {
+    if (!column || nextWidth <= column * SURGE_RATIO) {
+        return false;
+    }
+    if (afterWidth === undefined) {
+        return true;
+    }
+    if (afterWidth > column * SURGE_RATIO) {
+        return true;
+    }
+    // If the line after the jump doesn't keep anywhere near the jumped-to
+    // width, the jump was a one-off (e.g. a PDF copy that happened to drop
+    // one line break), not the start of a persisting new region.
+    return Math.abs(afterWidth - nextWidth) <= nextWidth * PERSIST_RATIO;
+}
+
 function unwrapText(text) {
     if (!text || text.indexOf("\n") < 0) {
         return text;
@@ -131,52 +157,88 @@ function unwrapText(text) {
     var lines = [];
     var widths = [];
     var maxWidth = 0;
+    var nonEmptyWidths = [];
     var i;
 
     for (i = 0; i < raw.length; i++) {
         var trimmed = trimString(raw[i]);
         lines.push(trimmed);
+        var width = trimmed ? visualWidth(trimmed) : 0;
+        widths.push(width);
+        if (width > maxWidth) {
+            maxWidth = width;
+        }
         if (trimmed) {
-            var width = visualWidth(trimmed);
-            widths.push(width);
-            if (width > maxWidth) {
-                maxWidth = width;
-            }
+            nonEmptyWidths.push(width);
         }
     }
 
     // A single line past MAX_COLUMN means the text arrives already joined
-    // (or was pasted from somewhere without wrapping at all) - the median
-    // of the rest doesn't matter, this one line is reason enough to leave
+    // (or was pasted from somewhere without wrapping at all) - leave
     // everything alone.
     if (maxWidth > MAX_COLUMN) {
         return text;
     }
 
-    var column = medianWidth(widths);
-
-    if (column < MIN_COLUMN) {
+    // Only bother if at least one line looks like it could be wrapped prose.
+    var qualifies = false;
+    for (i = 0; i < nonEmptyWidths.length; i++) {
+        if (nonEmptyWidths[i] >= MIN_COLUMN) {
+            qualifies = true;
+            break;
+        }
+    }
+    if (!qualifies) {
         return text;
     }
 
+    // Used as the column estimate whenever there isn't yet a local window to
+    // measure from (the very first line of a paragraph, or right after a
+    // break resets it) - and for judging whether a *closed* paragraph reads
+    // as a heading, since by then its own width no longer reflects the
+    // column it was wrapped at (a merged multi-line heading is long).
+    var globalColumn = medianWidth(nonEmptyWidths);
+
     var out = [];
-    // The width test has to compare against the line as it was laid out, not
-    // against the paragraph accumulated so far in the output buffer.
     var previousLine = "";
+    // Widths of the lines actually merged into the run in progress, most
+    // recent last - this is the *local* column estimate. It only accumulates
+    // lines that were merged, and resets on every new paragraph, so a
+    // heading's narrow lines can never leak into the body's column or vice
+    // versa (see entersNewRegion for why the region boundary itself doesn't
+    // rely on this being populated yet).
+    var window = [];
 
     for (i = 0; i < lines.length; i++) {
         var line = lines[i];
 
         if (!line) {
+            closeParagraph(out, globalColumn, false);
             pushBlank(out);
             previousLine = "";
+            window = [];
             continue;
         }
 
+        var lineWidth = widths[i];
         var startsBlock = !out.length || out[out.length - 1] === "";
-        if (startsBlock || keepsBreak(previousLine, line, column)) {
+
+        if (startsBlock) {
             out.push(line);
-            previousLine = appendHeadingGap(out, line, column) ? "" : line;
+            previousLine = line;
+            window = [];
+            continue;
+        }
+
+        var column = window.length ? medianWidth(window) : globalColumn;
+        var afterWidth = (i + 1 < widths.length && lines[i + 1]) ? widths[i + 1] : undefined;
+        var regionChange = entersNewRegion(column, lineWidth, afterWidth);
+
+        if (regionChange || keepsBreak(previousLine, line, column)) {
+            closeParagraph(out, globalColumn, regionChange);
+            out.push(line);
+            previousLine = line;
+            window = [];
             continue;
         }
 
@@ -194,6 +256,10 @@ function unwrapText(text) {
             out[out.length - 1] = buffer + " " + line;
         }
         previousLine = line;
+        window.push(lineWidth);
+        if (window.length > WINDOW_SIZE) {
+            window.shift();
+        }
     }
 
     return out.join("\n");
@@ -205,14 +271,23 @@ function pushBlank(out) {
     }
 }
 
-// Give a heading a blank line of its own so the structure survives into the
-// translation - the translator keeps the line breaks it is handed.
-function appendHeadingGap(out, line, column) {
-    if (SENTENCE_END.test(line) || LIST_ITEM.test(line) || visualWidth(line) >= column * HEADING_RATIO) {
-        return false;
+// Give the paragraph that just closed a blank line of its own if it reads
+// as a heading, so the structure survives into the translation. A region
+// change ending it is itself a strong enough signal on its own (a merged
+// heading can be as long as the body text next to it, so its own width
+// stops being useful for this call); otherwise fall back to the plain
+// "was this line short next to the column it was wrapped at" test.
+function closeParagraph(out, column, regionChange) {
+    var text = out.length ? out[out.length - 1] : "";
+    if (!text) {
+        return;
     }
-    out.push("");
-    return true;
+    if (SENTENCE_END.test(text) || LIST_ITEM.test(text)) {
+        return;
+    }
+    if (regionChange || visualWidth(text) < column * HEADING_RATIO) {
+        pushBlank(out);
+    }
 }
 
 function keepsBreak(previousLine, next, column) {
